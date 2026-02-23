@@ -129,9 +129,41 @@ type RoutineData = {
   classPlans: Plan[];
   title: string;
   lastModified?: any;
+  athleteSkills?: Record<string, AthleteSkill[]>;
+  rubricEntries?: RubricEntry[];
 };
 
 type AthleteShape = 'dot' | 'star' | 'square';
+
+// Skill level for athlete skill tracker
+type SkillLevel = 'none' | 'learning' | 'consistent' | 'elite';
+
+type AthleteSkill = {
+  skillId: string;
+  level: SkillLevel;
+  notes: string;
+};
+
+type SkillCategory = {
+  id: string;
+  name: string;
+  skills: { id: string; name: string }[];
+};
+
+// Scoring rubric
+type RubricScore = {
+  categoryId: string;
+  score: number; // 0–10
+  notes: string;
+};
+
+type RubricEntry = {
+  id: string;
+  date: string;
+  competition: string;
+  scores: RubricScore[];
+  totalScore: number;
+};
 
 type RoutineSummary = {
   id: string;
@@ -139,7 +171,7 @@ type RoutineSummary = {
   lastModified: any;
 };
 
-type Tab = 'roster' | 'formations' | 'settings' | 'countsheet' | 'practice' | 'classes';
+type Tab = 'roster' | 'formations' | 'settings' | 'countsheet' | 'practice' | 'classes' | 'skills' | 'scoring';
 
 // --- Constants ---
 const PANEL_COUNT = 9; 
@@ -150,6 +182,45 @@ const DEFAULT_GROUPS: Group[] = [
   { id: 'g2', name: 'Base', color: '#3b82f6' },
   { id: 'g3', name: 'Back', color: '#10b981' },
   { id: 'g4', name: 'Tumbler', color: '#f59e0b' }
+];
+
+const DEFAULT_SKILL_CATEGORIES: SkillCategory[] = [
+  { id: 'tumbling', name: 'Tumbling', skills: [
+    { id: 'bhs', name: 'Back Handspring' },
+    { id: 'tuck', name: 'Back Tuck' },
+    { id: 'layout', name: 'Layout' },
+    { id: 'full', name: 'Full' },
+    { id: 'double', name: 'Double Full' },
+  ]},
+  { id: 'stunting', name: 'Stunting', skills: [
+    { id: 'lib', name: 'Liberty' },
+    { id: 'heli', name: 'Helicopter' },
+    { id: 'arabesque', name: 'Arabesque' },
+    { id: 'scorpion', name: 'Scorpion' },
+    { id: 'bow_arrow', name: 'Bow & Arrow' },
+  ]},
+  { id: 'jumps', name: 'Jumps', skills: [
+    { id: 'toe_touch', name: 'Toe Touch' },
+    { id: 'hurdler', name: 'Hurdler' },
+    { id: 'pike', name: 'Pike' },
+    { id: 'herkie', name: 'Herkie' },
+  ]},
+  { id: 'pyramids', name: 'Pyramids', skills: [
+    { id: 'toss_hitch', name: 'Toss to Hitch' },
+    { id: 'toss_ext', name: 'Toss to Extension' },
+    { id: 'release', name: 'Release Move' },
+  ]},
+];
+
+const DEFAULT_RUBRIC_CATEGORIES = [
+  { id: 'stunts', name: 'Stunts & Pyramids', maxScore: 10 },
+  { id: 'tumbling_rb', name: 'Tumbling', maxScore: 10 },
+  { id: 'jumps_rb', name: 'Jumps', maxScore: 10 },
+  { id: 'motion', name: 'Motion Technique', maxScore: 10 },
+  { id: 'performance', name: 'Performance', maxScore: 10 },
+  { id: 'choreography', name: 'Choreography', maxScore: 10 },
+  { id: 'difficulty', name: 'Difficulty', maxScore: 10 },
+  { id: 'execution', name: 'Execution', maxScore: 10 },
 ];
 
 const PRACTICE_TEMPLATE = `PRACTICE PLAN
@@ -350,6 +421,20 @@ const App = () => {
 
   const [showHorizontalGrid, setShowHorizontalGrid] = useState(false);
   const [athleteShape, setAthleteShape] = useState<AthleteShape>('dot');
+
+  // BPM / Tap Tempo State
+  const [bpm, setBpm] = useState<number | null>(null);
+  const [tapTimes, setTapTimes] = useState<number[]>([]);
+  const [showBeatMarkers, setShowBeatMarkers] = useState(false);
+
+  // Athlete Skills State
+  const [athleteSkills, setAthleteSkills] = useState<Record<string, AthleteSkill[]>>({}); // keyed by athleteId
+  const [skillCategories] = useState<SkillCategory[]>(DEFAULT_SKILL_CATEGORIES);
+  const [selectedSkillAthleteId, setSelectedSkillAthleteId] = useState<string | null>(null);
+
+  // Scoring Rubric State
+  const [rubricEntries, setRubricEntries] = useState<RubricEntry[]>([]);
+  const [selectedRubricId, setSelectedRubricId] = useState<string | null>(null);
   
   // Selection Context Settings
   const [showContextPrev, setShowContextPrev] = useState(true);
@@ -400,7 +485,9 @@ const App = () => {
       formations,
       countSheet,
       practicePlans,
-      classPlans, 
+      classPlans,
+      athleteSkills,
+      rubricEntries,
       lastModified: serverTimestamp() 
     }, { merge: true });
   };
@@ -428,6 +515,8 @@ const App = () => {
     setCountSheet(newRoutine.countSheet);
     setPracticePlans([]);
     setClassPlans([]);
+    setAthleteSkills({});
+    setRubricEntries([]);
     setCurrentFormationIndex(0);
     setAudioSrc(null); 
     setIsRoutineMenuOpen(false);
@@ -453,7 +542,9 @@ const App = () => {
     setIsRoutineMenuOpen(false);
     setPlaybackMode('stopped');
     setSelectedAthleteIds(new Set());
-    setAudioSrc(null); 
+    setAudioSrc(null);
+    setAthleteSkills({});
+    setRubricEntries([]);
   };
 
   // --- AUDIO LOGIC ---
@@ -759,6 +850,8 @@ const App = () => {
                 setCountSheet(data.countSheet || [{id: generateId(), section: 'Opening', counts: ['','','','','','','','']}]);
                 setPracticePlans(data.practicePlans || []);
                 setClassPlans(data.classPlans || []);
+                setAthleteSkills(data.athleteSkills || {});
+                setRubricEntries(data.rubricEntries || []);
                 
                 // Note: We don't restore audioSrc here as it's a local file blob that can't be saved to DB easily in this setup
             }
@@ -787,13 +880,15 @@ const App = () => {
           countSheet,
           practicePlans,
           classPlans,
+          athleteSkills,
+          rubricEntries,
           lastModified: serverTimestamp() 
         }, { merge: true });
       } catch (e) { console.error("Error saving", e); }
     };
     const timer = setTimeout(saveData, 2000);
     return () => clearTimeout(timer);
-  }, [routineTitle, roster, groups, formations, countSheet, practicePlans, classPlans, user, loading, currentRoutineId]);
+  }, [routineTitle, roster, groups, formations, countSheet, practicePlans, classPlans, athleteSkills, rubricEntries, user, loading, currentRoutineId]);
 
   // --- Animation ---
   useEffect(() => {
@@ -965,6 +1060,90 @@ const App = () => {
     if (selectedPlanId === id) setSelectedPlanId(null);
   };
 
+  // --- LOGIC: BPM Tap Tempo ---
+  const handleTapTempo = () => {
+    const now = Date.now();
+    const recent = tapTimes.filter(t => now - t < 5000); // only last 5s taps
+    const newTaps = [...recent, now];
+    setTapTimes(newTaps);
+
+    if (newTaps.length >= 2) {
+      const intervals: number[] = [];
+      for (let i = 1; i < newTaps.length; i++) {
+        intervals.push(newTaps[i] - newTaps[i - 1]);
+      }
+      const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+      const calculatedBpm = Math.round(60000 / avgInterval);
+      setBpm(calculatedBpm);
+    }
+  };
+
+  const resetTapTempo = () => {
+    setTapTimes([]);
+    setBpm(null);
+  };
+
+  // Beat interval in seconds
+  const beatInterval = bpm ? 60 / bpm : null;
+
+  // --- LOGIC: Athlete Skills ---
+  const getAthleteSkillLevel = (athleteId: string, skillId: string): SkillLevel => {
+    const skills = athleteSkills[athleteId] || [];
+    return skills.find(s => s.skillId === skillId)?.level || 'none';
+  };
+
+  const setAthleteSkillLevel = (athleteId: string, skillId: string, level: SkillLevel) => {
+    setAthleteSkills(prev => {
+      const current = prev[athleteId] || [];
+      const existing = current.find(s => s.skillId === skillId);
+      const updated = existing
+        ? current.map(s => s.skillId === skillId ? { ...s, level } : s)
+        : [...current, { skillId, level, notes: '' }];
+      return { ...prev, [athleteId]: updated };
+    });
+  };
+
+  const SKILL_LEVELS: { value: SkillLevel; label: string; color: string }[] = [
+    { value: 'none', label: '—', color: 'bg-zinc-800 text-zinc-600' },
+    { value: 'learning', label: 'Learning', color: 'bg-yellow-500/20 text-yellow-400' },
+    { value: 'consistent', label: 'Consistent', color: 'bg-blue-500/20 text-blue-400' },
+    { value: 'elite', label: 'Elite', color: 'bg-emerald-500/20 text-emerald-400' },
+  ];
+
+  // --- LOGIC: Scoring Rubric ---
+  const addRubricEntry = () => {
+    const newEntry: RubricEntry = {
+      id: generateId(),
+      date: new Date().toISOString().split('T')[0],
+      competition: 'Competition',
+      scores: DEFAULT_RUBRIC_CATEGORIES.map(cat => ({ categoryId: cat.id, score: 0, notes: '' })),
+      totalScore: 0,
+    };
+    setRubricEntries(prev => [newEntry, ...prev]);
+    setSelectedRubricId(newEntry.id);
+  };
+
+  const updateRubricScore = (entryId: string, categoryId: string, score: number) => {
+    setRubricEntries(prev => prev.map(entry => {
+      if (entry.id !== entryId) return entry;
+      const newScores = entry.scores.map(s => s.categoryId === categoryId ? { ...s, score } : s);
+      const total = newScores.reduce((sum, s) => {
+        const cat = DEFAULT_RUBRIC_CATEGORIES.find(c => c.id === s.categoryId);
+        return sum + (s.score / (cat?.maxScore || 10)) * (cat?.maxScore || 10);
+      }, 0);
+      return { ...entry, scores: newScores, totalScore: parseFloat(total.toFixed(2)) };
+    }));
+  };
+
+  const updateRubricField = (entryId: string, field: 'date' | 'competition', value: string) => {
+    setRubricEntries(prev => prev.map(e => e.id === entryId ? { ...e, [field]: value } : e));
+  };
+
+  const deleteRubricEntry = (id: string) => {
+    setRubricEntries(prev => prev.filter(e => e.id !== id));
+    if (selectedRubricId === id) setSelectedRubricId(null);
+  };
+
   // --- Render Helpers ---
 
   const currentFormation = formations[currentFormationIndex];
@@ -1058,6 +1237,48 @@ const App = () => {
       `;
       printContent(`${selected.title}`, html);
     } 
+    else if (sidebarTab === 'skills') {
+      // Export skill tracker as HTML
+      const html = `
+        <div class="meta">Routine: ${routineTitle}</div>
+        ${roster.map(athlete => {
+          const skills = athleteSkills[athlete.id] || [];
+          const group = groups.find(g => g.id === athlete.groupId);
+          return `
+            <h2 style="color:${group?.color || '#000'}">${athlete.name} (${athlete.initial}) — ${group?.name || ''}</h2>
+            ${DEFAULT_SKILL_CATEGORIES.map(cat => {
+              const catSkills = cat.skills.filter(sk => {
+                const s = skills.find(x => x.skillId === sk.id);
+                return s && s.level !== 'none';
+              });
+              if (catSkills.length === 0) return '';
+              return `<h3>${cat.name}</h3><table><thead><tr><th>Skill</th><th>Level</th></tr></thead><tbody>${catSkills.map(sk => {
+                const s = skills.find(x => x.skillId === sk.id);
+                return `<tr><td>${sk.name}</td><td><strong>${s?.level || '—'}</strong></td></tr>`;
+              }).join('')}</tbody></table>`;
+            }).join('')}
+          `;
+        }).join('<hr/>')}
+      `;
+      printContent(`${routineTitle} - Skill Tracker`, html);
+    }
+    else if (sidebarTab === 'scoring') {
+      const html = `
+        <div class="meta">Routine: ${routineTitle}</div>
+        ${rubricEntries.map(entry => `
+          <div style="margin-bottom:30px; padding:20px; border:1px solid #eee; border-radius:8px; page-break-inside:avoid;">
+            <h2 style="margin:0 0 5px 0">${entry.competition}</h2>
+            <p style="color:#666; font-size:13px; margin:0 0 15px 0">${entry.date} &nbsp;|&nbsp; Total: <strong>${entry.totalScore.toFixed(1)} / ${DEFAULT_RUBRIC_CATEGORIES.length * 10}</strong></p>
+            <table><thead><tr><th>Category</th><th>Score</th><th>Max</th></tr></thead>
+            <tbody>${entry.scores.map(s => {
+              const cat = DEFAULT_RUBRIC_CATEGORIES.find(c => c.id === s.categoryId);
+              return `<tr><td>${cat?.name || s.categoryId}</td><td><strong>${s.score.toFixed(1)}</strong></td><td>${cat?.maxScore || 10}</td></tr>`;
+            }).join('')}</tbody></table>
+          </div>
+        `).join('')}
+      `;
+      printContent(`${routineTitle} - Scoring Rubric`, html);
+    }
     else {
       // Routine / Visual Export
       let rosterHtml = `<div style="margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 8px;"><h3>Roster</h3><div style="display: flex; flex-wrap: wrap; gap: 10px;">`;
@@ -1182,6 +1403,194 @@ const App = () => {
     );
   };
 
+  const renderSkillTracker = () => {
+    const selectedAthlete = selectedSkillAthleteId ? roster.find(a => a.id === selectedSkillAthleteId) : null;
+    return (
+      <div className="flex flex-1 gap-4 overflow-hidden p-4">
+        {/* Athlete List */}
+        <div className="w-56 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-white/5">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Athletes</span>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {roster.map(athlete => {
+              const color = getAthleteColor(athlete);
+              const skillCount = (athleteSkills[athlete.id] || []).filter(s => s.level !== 'none').length;
+              return (
+                <div
+                  key={athlete.id}
+                  onClick={() => setSelectedSkillAthleteId(athlete.id)}
+                  className={`p-3 rounded-xl cursor-pointer transition-all border flex items-center gap-3 ${selectedSkillAthleteId === athlete.id ? 'bg-rose-500/10 border-rose-500/50' : 'bg-transparent border-transparent hover:bg-white/5'}`}
+                >
+                  <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0" style={{ backgroundColor: color }}>{athlete.initial}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold text-zinc-200 truncate">{athlete.name}</div>
+                    <div className="text-[10px] text-zinc-500">{skillCount} skills tracked</div>
+                  </div>
+                </div>
+              );
+            })}
+            {roster.length === 0 && <div className="p-4 text-center text-xs text-zinc-600">Add athletes in Roster</div>}
+          </div>
+        </div>
+
+        {/* Skill Grid */}
+        {selectedAthlete ? (
+          <div className="flex-1 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-white/5 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center text-[11px] font-black" style={{ backgroundColor: getAthleteColor(selectedAthlete) }}>{selectedAthlete.initial}</div>
+              <div>
+                <div className="text-sm font-bold text-zinc-100">{selectedAthlete.name}</div>
+                <div className="text-[10px] text-zinc-500">{groups.find(g => g.id === selectedAthlete.groupId)?.name}</div>
+              </div>
+              <div className="ml-auto flex gap-2 text-[10px]">
+                {SKILL_LEVELS.filter(l => l.value !== 'none').map(l => (
+                  <span key={l.value} className={`px-2 py-0.5 rounded-full font-bold ${l.color}`}>{l.label}</span>
+                ))}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4 space-y-6">
+              {skillCategories.map(cat => (
+                <div key={cat.id}>
+                  <div className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-3">{cat.name}</div>
+                  <div className="grid grid-cols-1 gap-2">
+                    {cat.skills.map(skill => {
+                      const level = getAthleteSkillLevel(selectedAthlete.id, skill.id);
+                      return (
+                        <div key={skill.id} className="flex items-center gap-3 p-2.5 bg-black/20 rounded-xl border border-white/5">
+                          <span className="text-xs text-zinc-300 flex-1">{skill.name}</span>
+                          <div className="flex gap-1">
+                            {SKILL_LEVELS.map(l => (
+                              <button
+                                key={l.value}
+                                onClick={() => setAthleteSkillLevel(selectedAthlete.id, skill.id, l.value)}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${level === l.value ? l.color + ' ring-1 ring-white/20' : 'bg-zinc-800/60 text-zinc-600 hover:bg-zinc-700'}`}
+                              >
+                                {l.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-zinc-600 gap-2">
+            <GraduationCap className="w-12 h-12 opacity-20" />
+            <span className="text-sm">Select an athlete to view skills</span>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const renderScoringRubric = () => {
+    const selectedEntry = rubricEntries.find(e => e.id === selectedRubricId);
+    return (
+      <div className="flex flex-1 gap-4 overflow-hidden p-4">
+        {/* Entry List */}
+        <div className="w-56 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-white/5 flex items-center justify-between">
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Competitions</span>
+            <button onClick={addRubricEntry} className="p-1 hover:bg-white/10 rounded text-rose-500 transition-colors"><Plus className="w-4 h-4" /></button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-2 space-y-1">
+            {rubricEntries.map(entry => {
+              const pct = (entry.totalScore / (DEFAULT_RUBRIC_CATEGORIES.length * 10)) * 100;
+              return (
+                <div
+                  key={entry.id}
+                  onClick={() => setSelectedRubricId(entry.id)}
+                  className={`p-3 rounded-xl cursor-pointer transition-all border ${selectedRubricId === entry.id ? 'bg-rose-500/10 border-rose-500/50' : 'bg-transparent border-transparent hover:bg-white/5'}`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-zinc-200 truncate flex-1">{entry.competition}</span>
+                    <span className="text-xs font-black text-rose-400 ml-2">{entry.totalScore.toFixed(1)}</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-500 mb-2">{entry.date}</div>
+                  <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-rose-500 to-pink-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+            {rubricEntries.length === 0 && <div className="p-4 text-center text-xs text-zinc-600">No entries yet</div>}
+          </div>
+        </div>
+
+        {/* Score Editor */}
+        {selectedEntry ? (
+          <div className="flex-1 bg-zinc-900/60 backdrop-blur-xl border border-white/10 rounded-2xl flex flex-col overflow-hidden">
+            <div className="p-4 border-b border-white/5 flex items-center gap-4">
+              <input
+                value={selectedEntry.competition}
+                onChange={e => updateRubricField(selectedEntry.id, 'competition', e.target.value)}
+                className="flex-1 bg-transparent text-base font-bold focus:outline-none text-zinc-100 placeholder-zinc-600"
+                placeholder="Competition Name"
+              />
+              <input
+                type="date"
+                value={selectedEntry.date}
+                onChange={e => updateRubricField(selectedEntry.id, 'date', e.target.value)}
+                className="bg-black/20 border border-white/10 rounded-lg px-2 py-1 text-sm text-zinc-400 focus:outline-none"
+              />
+              <div className="text-right">
+                <div className="text-xl font-black text-rose-400">{selectedEntry.totalScore.toFixed(1)}</div>
+                <div className="text-[10px] text-zinc-500">/ {DEFAULT_RUBRIC_CATEGORIES.length * 10}.0</div>
+              </div>
+              <button onClick={() => deleteRubricEntry(selectedEntry.id)} className="p-2 hover:bg-red-500/10 text-zinc-500 hover:text-red-400 rounded-lg transition-colors"><Trash2 className="w-4 h-4" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-4">
+              <div className="grid gap-3">
+                {DEFAULT_RUBRIC_CATEGORIES.map(cat => {
+                  const scoreEntry = selectedEntry.scores.find(s => s.categoryId === cat.id);
+                  const score = scoreEntry?.score || 0;
+                  const pct = (score / cat.maxScore) * 100;
+                  return (
+                    <div key={cat.id} className="bg-black/20 border border-white/5 rounded-xl p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-sm font-semibold text-zinc-200">{cat.name}</span>
+                        <div className="flex items-center gap-3">
+                          <div className="text-xl font-black" style={{ color: score >= 8 ? '#10b981' : score >= 6 ? '#f59e0b' : '#f43f5e' }}>{score.toFixed(1)}</div>
+                          <span className="text-xs text-zinc-600">/ {cat.maxScore}</span>
+                        </div>
+                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max={cat.maxScore}
+                        step="0.5"
+                        value={score}
+                        onChange={e => updateRubricScore(selectedEntry.id, cat.id, parseFloat(e.target.value))}
+                        className="w-full accent-rose-500"
+                      />
+                      <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden mt-2">
+                        <div
+                          className="h-full rounded-full transition-all"
+                          style={{ width: `${pct}%`, background: score >= 8 ? '#10b981' : score >= 6 ? '#f59e0b' : '#f43f5e' }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-zinc-600 gap-2">
+            <Star className="w-12 h-12 opacity-20" />
+            <span className="text-sm">Select or add a competition entry</span>
+            <button onClick={addRubricEntry} className="mt-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 rounded-xl text-sm font-bold text-white transition-colors">+ New Entry</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const PrintLayout = () => {
      return (
        <div className="print-only hidden print:block bg-white text-black p-8 absolute inset-0 z-50 overflow-visible">
@@ -1285,13 +1694,43 @@ const App = () => {
                <button onClick={() => { if(audioRef.current) audioRef.current.muted = !isMuted; setIsMuted(!isMuted); }} className="text-zinc-400 hover:text-white">
                  {isMuted ? <VolumeX className="w-3 h-3" /> : <Volume2 className="w-3 h-3" />}
                </button>
+               {/* BPM display in audio row */}
+               <div className="flex items-center gap-2 border-l border-white/10 pl-3">
+                 <button
+                   onClick={handleTapTempo}
+                   className="px-2.5 py-1 bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-400 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 border border-white/5"
+                 >
+                   TAP
+                 </button>
+                 <span className="text-[10px] font-mono font-bold text-rose-400 w-14">
+                   {bpm ? `${bpm} BPM` : '— BPM'}
+                 </span>
+                 {bpm && (
+                   <button onClick={resetTapTempo} className="text-zinc-600 hover:text-zinc-400"><X className="w-3 h-3" /></button>
+                 )}
+               </div>
              </>
           ) : (
-             <label className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer w-full">
+             <label className="flex items-center gap-2 text-xs text-zinc-500 hover:text-zinc-300 cursor-pointer flex-1">
                 <Music className="w-3 h-3" />
                 <span>Click to Import Music (MP3)</span>
                 <input type="file" accept="audio/*,.mp3,.wav,.m4a" onChange={handleFileChange} className="hidden" ref={fileInputRef} />
              </label>
+          )}
+          {/* BPM Tap Tempo always visible when no audio */}
+          {!audioSrc && (
+            <div className="flex items-center gap-2 border-l border-white/10 pl-3">
+              <button
+                onClick={handleTapTempo}
+                className="px-2.5 py-1 bg-zinc-800 hover:bg-rose-500/20 hover:text-rose-400 text-zinc-400 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all active:scale-95 border border-white/5"
+              >
+                TAP
+              </button>
+              <span className="text-[10px] font-mono font-bold text-rose-400 w-14">
+                {bpm ? `${bpm} BPM` : '— BPM'}
+              </span>
+              {bpm && <button onClick={resetTapTempo} className="text-zinc-600 hover:text-zinc-400"><X className="w-3 h-3" /></button>}
+            </div>
           )}
       </div>
 
@@ -1494,6 +1933,8 @@ const App = () => {
               { id: 'countsheet', label: 'Count Sheet', icon: FileText },
               { id: 'practice', label: 'Practice Plans', icon: ClipboardList },
               { id: 'classes', label: 'Classes', icon: GraduationCap },
+              { id: 'skills', label: 'Skill Tracker', icon: Star },
+              { id: 'scoring', label: 'Scoring Rubric', icon: Flag },
             ].map(tab => (
               <button 
                 key={tab.id}
@@ -1574,11 +2015,11 @@ const App = () => {
                   <div className="space-y-6 animate-in fade-in slide-in-from-left-4 duration-300">
                     <div className="space-y-2">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest pl-1">Formation Name</label>
-                      <input value={currentFormation.name} onChange={(e) => { const updated = [...formations]; updated[currentFormationIndex].name = e.target.value; setFormations(updated); }} className="w-full bg-black/20 text-sm p-3 rounded-xl border border-white/5 focus:border-rose-500/50 focus:bg-black/40 focus:outline-none transition-all text-zinc-300" />
+                      <input value={currentFormation.name} onChange={(e) => { const updated = formations.map((f, i) => i === currentFormationIndex ? { ...f, name: e.target.value } : f); setFormations(updated); }} className="w-full bg-black/20 text-sm p-3 rounded-xl border border-white/5 focus:border-rose-500/50 focus:bg-black/40 focus:outline-none transition-all text-zinc-300" />
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest pl-1">Choreography Notes</label>
-                      <textarea value={currentFormation.notes} onChange={(e) => { const updated = [...formations]; updated[currentFormationIndex].notes = e.target.value; setFormations(updated); }} className="w-full h-48 bg-black/20 text-sm p-3 rounded-xl border border-white/5 focus:border-rose-500/50 focus:bg-black/40 focus:outline-none resize-none transition-all text-zinc-300 leading-relaxed" placeholder="e.g. 1-3 load in, 5 dip, 7 up..." />
+                      <textarea value={currentFormation.notes} onChange={(e) => { const updated = formations.map((f, i) => i === currentFormationIndex ? { ...f, notes: e.target.value } : f); setFormations(updated); }} className="w-full h-48 bg-black/20 text-sm p-3 rounded-xl border border-white/5 focus:border-rose-500/50 focus:bg-black/40 focus:outline-none resize-none transition-all text-zinc-300 leading-relaxed" placeholder="e.g. 1-3 load in, 5 dip, 7 up..." />
                     </div>
                     <div className="pt-6 border-t border-white/5 space-y-4">
                       {[
@@ -1721,6 +2162,10 @@ const App = () => {
                 </div>
               </div>
             </div>
+          ) : sidebarTab === 'skills' ? (
+            renderSkillTracker()
+          ) : sidebarTab === 'scoring' ? (
+            renderScoringRubric()
           ) : (
             renderPlanEditor(sidebarTab === 'practice' ? 'practice' : 'class')
           )}
